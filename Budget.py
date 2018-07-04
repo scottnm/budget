@@ -16,7 +16,7 @@ def LoadCache(cacheFileName):
             return cache
     except FileNotFoundError:
         print('No cache file found @ {}'.format(cacheFileName))
-        return dict()
+        return list()
 
 def SaveCache(cacheFileName, categoryCache):
     with open(cacheFileName, 'wb+') as cacheFile:
@@ -41,7 +41,7 @@ def Main():
     # load the csv file from chase
     with open(bankStatementFileName, 'r') as bankStatementFile:
         debitLines = [line for line in bankStatementFile.readlines() if line.lower().startswith('debit')]
-        transactionLine = re.compile(r'\w+,\d{2}/\d{2}/\d{4},"(.*)",(-?\d+.\d+)')
+        transactionLine = re.compile(r'\w+,\d{2}/\d{2}/\d{4},"(.*)\s+\d{2}/\d{2}",(-?\d+.\d+)')
         for line in debitLines:
             match = transactionLine.match(line)
             if match is None:
@@ -53,9 +53,9 @@ def Main():
             print('description: {}'.format(description))
             print()
 
-        # read each line for amount and description
-            # if description auto matches, tally it up
-            # if it doesn't prompt user to categorize it
+            # read each line for amount and description
+                # if description auto matches, tally it up
+                # if it doesn't prompt user to categorize it
     # save the file containing the old categories and dict that maps recurring descriptions to categories
     SaveCache(CACHE_FILE_NAME, categoryCache)
 
