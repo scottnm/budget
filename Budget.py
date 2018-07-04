@@ -46,8 +46,11 @@ def Main():
             match = transactionLine.match(line)
             if match is None:
                 continue
-            for i, matchGroup in enumerate(match.groups()):
-                print('{}: {}'.format(i, matchGroup))
+            assert len(match.groups()) == 2
+            description = match.group(1)
+            amount = float(match.group(2))
+            print('amount: {}'.format(amount))
+            print('description: {}'.format(description))
             print()
 
         # read each line for amount and description
