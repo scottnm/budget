@@ -1,4 +1,5 @@
 import pickle
+import re
 import sys
 
 CACHE_FILE_NAME = 'CategoryCache.data'
@@ -40,8 +41,15 @@ def Main():
     # load the csv file from chase
     with open(bankStatementFileName, 'r') as bankStatementFile:
         debitLines = [line for line in bankStatementFile.readlines() if line.lower().startswith('debit')]
+        transactionLine = re.compile(r'\w+,\d{2}/\d{2}/\d{4},"(.*)",(-?\d+.\d+)')
         for line in debitLines:
-            print(line)
+            match = transactionLine.match(line)
+            if match is None:
+                continue
+            for i, matchGroup in enumerate(match.groups()):
+                print('{}: {}'.format(i, matchGroup))
+            print()
+
         # read each line for amount and description
             # if description auto matches, tally it up
             # if it doesn't prompt user to categorize it
