@@ -30,7 +30,7 @@ def Main():
         return
 
     bankStatementFileName = sys.argv[1]
-    if not bankStatementFileName.endswith('.csv'):
+    if not bankStatementFileName.lower().endswith('.csv'):
         PrintUsageError('File to parse must be csv')
         return
 
@@ -39,7 +39,8 @@ def Main():
 
     # load the csv file from chase
     with open(bankStatementFileName, 'r') as bankStatementFile:
-        for line in bankStatementFile.readlines():
+        debitLines = [line for line in bankStatementFile.readlines() if line.lower().startswith('debit')]
+        for line in debitLines:
             print(line)
         # read each line for amount and description
             # if description auto matches, tally it up
