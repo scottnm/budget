@@ -4,4 +4,4 @@ A simple script that parses CSV files from my bank account with simple prompts t
 
 ## Usage
 
-python Budget.py SomeBankStatement.csv
+`> python Budget.py SomeBankStatement.csv`
