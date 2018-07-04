@@ -68,9 +68,6 @@ def Main():
             assert len(match.groups()) == 2
             description = re.sub(r'\s+', ' ', match.group(1))
             amount = float(match.group(2))
-            print('amount: {}'.format(amount))
-            print('description: {}'.format(description))
-            print()
 
             # if description auto matches, tally it up
             category = FindCategoryFromCache(categoryCache, description)
