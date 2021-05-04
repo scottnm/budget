@@ -40,6 +40,11 @@ def AssignCategory(categoryCache, description):
     categoryCache.append(CategoryCacheEntry(description, category))
     return category
 
+def sort_report(report):
+    return sorted(
+        [(category, categorySum) for category, categorySum in report.items()],
+        key=lambda reportListEntry: reportListEntry[1])
+
 def Main():
     # Verify Args
     if len(sys.argv) < 2:
@@ -59,15 +64,17 @@ def Main():
     # load the csv file from chase
     with open(bankStatementFileName, 'r') as bankStatementFile:
         debitLines = [line for line in bankStatementFile.readlines() if line.lower().startswith('debit')]
-        transactionLine = re.compile(r'\w+,\d{2}/\d{2}/\d{4},"(.*)\s+\d{2}/\d{2}",(-?\d+.\d+)')
+        transactionLine = re.compile(r'\w+,(\d{2})/\d{2}/(\d{4}),"(.*)\s+.*",(-?\d+.\d+)')
         # read each line for amount and description
         for line in debitLines:
             match = transactionLine.match(line)
             if match is None:
+                print('no match! {}'.format(line))
                 continue
-            assert len(match.groups()) == 2
-            description = re.sub(r'\s+', ' ', match.group(1))
-            amount = float(match.group(2))
+            assert len(match.groups()) == 4
+            description = re.sub(r'\s+', ' ', match.group(3))
+            amount = float(match.group(4))
+            monthYear = match.group(2) + ' ' + match.group(1)
 
             # if description auto matches, tally it up
             category = FindCategoryFromCache(categoryCache, description)
@@ -75,17 +82,23 @@ def Main():
                 # if it doesn't prompt user to categorize it
                 category = AssignCategory(categoryCache, description)
 
-            if category not in debitReport:
-                debitReport[category] = 0
-            debitReport[category] += amount
+            if monthYear not in debitReport:
+                debitReport[monthYear] = dict()
+            if category not in debitReport[monthYear]:
+                debitReport[monthYear][category] = 0
+            debitReport[monthYear][category] += amount
 
-    # flatten the debit report map into a sorted list
-    debitReportList = sorted(
-        [(category, categoryDebitSum) for category, categoryDebitSum in debitReport.items()],
-        key=lambda debitReportListEntry: debitReportListEntry[1])
+    # flatten the debit report into a sorted list of reports for each month
+    debitReportMonthList = [ (monthYear, sort_report(report)) for monthYear, report in debitReport.items() ]
+    debitReportMonthList = sorted(debitReportMonthList, key=lambda entry: entry[0])
 
-    for debitReportListEntry in debitReportList:
-        print('You spent ${:.2f} on {}'.format(-1 * debitReportListEntry[1], debitReportListEntry[0]))
+    for monthYearReport in debitReportMonthList:
+        monthSum = 0
+        for debitReportListEntry in monthYearReport[1]:
+            monthSum += debitReportListEntry[1]
+        print('{}: {}'.format(monthYearReport[0], -monthSum))
+        for debitReportListEntry in monthYearReport[1]:
+            print('    spent ${:.2f} on {}'.format(-debitReportListEntry[1], debitReportListEntry[0]))
 
     # save the file containing the old categories and dict that maps recurring descriptions to categories
     SaveCache(CACHE_FILE_NAME, categoryCache)
