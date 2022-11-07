@@ -6,6 +6,11 @@ import math
 import datetime
 import hashlib
 
+class Account(enum.Enum):
+    Checking = 0
+    CreditCard = 1
+    JointChecking = 2
+
 class TransactionType(enum.Enum):
     Debit = 0
     Credit = 1
@@ -13,13 +18,20 @@ class TransactionType(enum.Enum):
     Income = 3
 
 class Transaction:
-    def __init__(self, transaction_type, description, amount, datetime):
+    def __init__(self, account, transaction_type, description, amount, datetime):
+        self.account = account
         self.transaction_type = transaction_type
         self.description = description
         self.fixed_amount = math.floor(amount * 100)
         self.datetime = datetime
 
-        idbytes = (str(self.transaction_type)+"_"+self.description+"_"+str(self.fixed_amount)+"_"+str(self.datetime)).encode("utf8")
+        idbytes = "_".join([
+            str(self.account),
+            str(self.transaction_type),
+            self.description,
+            str(self.fixed_amount),
+            str(self.datetime)
+            ]).encode("utf8")
         self.hash = int(hashlib.sha256(idbytes).hexdigest(), 16)
 
     def __hash__(self):
@@ -86,11 +98,6 @@ def main():
     # FIXME: stub transaction log
     if len(sys.argv) >= 4:
         print('Writing stub entries')
-        t1 = Transaction(TransactionType.Debit,    "test debit",  10.15, datetime.datetime(2022, 10, 30))
-        t2 = Transaction(TransactionType.Credit,   "test credit", 11.15, datetime.datetime(2020, 10, 30))
-        t3 = Transaction(TransactionType.Transfer, "test xfer",   12.15, datetime.datetime(2021, 4, 30))
-        t4 = Transaction(TransactionType.Income,   "test income", 13.15, datetime.datetime(2022, 9, 30))
-        t5 = Transaction(TransactionType.Debit,    "test debit",  10.15, datetime.datetime(2022, 10, 30))
         for i in range(0, 36500):
             typ = None
             desc = None
@@ -113,7 +120,7 @@ def main():
                 desc = "test inc {}".format(i)
                 amt = 31.15
 
-            transaction_db.transactions.add(Transaction(typ, desc, amt, dat))
+            transaction_db.transactions.add(Transaction(Account.Checking, typ, desc, amt, dat))
 
         print('Saving transaction db with {} entries'.format(len(transaction_db.transactions)))
         transaction_db.Save(db_file_name)
