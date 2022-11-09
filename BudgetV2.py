@@ -1,10 +1,12 @@
+import csv
+import datetime
+import enum
+import hashlib
+import math
 import pickle
+import pprint
 import re
 import sys
-import enum
-import math
-import datetime
-import hashlib
 
 class Account(enum.Enum):
     Checking = 0
@@ -18,19 +20,25 @@ class TransactionType(enum.Enum):
     Income = 3
 
 class Transaction:
-    def __init__(self, account, transaction_type, description, amount, datetime):
+    def __init__(self, account, transaction_type, description, amount, datetime, balance_hint=0):
+        amount_sign = 1
+        if amount < 0:
+            amount_sign = -1
+
         self.account = account
         self.transaction_type = transaction_type
         self.description = description
-        self.fixed_amount = math.floor(amount * 100)
+        self.fixed_amount = math.floor(math.abs(amount * 100)) * amount_sign
         self.datetime = datetime
+        self.balance_hint = balance_hint
 
         idbytes = "_".join([
             str(self.account),
             str(self.transaction_type),
             self.description,
             str(self.fixed_amount),
-            str(self.datetime)
+            str(self.datetime),
+            str(balance_hint)
             ]).encode("utf8")
         self.hash = int(hashlib.sha256(idbytes).hexdigest(), 16)
 
@@ -91,37 +99,14 @@ def main():
     db_file_name = sys.argv[2]
     transaction_db = TransactionDb.Load(db_file_name)
     print('Loaded transaction db with {} entries'.format(len(transaction_db.transactions)))
-    # FIXME:
-    # for t in transaction_db.transactions:
-    #     print('    {} - {}'.format(t, hash(t)))
 
-    # FIXME: stub transaction log
+    with open(bank_statement_file_name) as bank_statement_csv:
+        csvDictReader = csv.DictReader(bank_statement_csv)
+        for row in csvDictReader:
+            if row['Type'] == 'ACCT_XFER':
+                pprint.pp(row)
+
     if len(sys.argv) >= 4:
-        print('Writing stub entries')
-        for i in range(0, 36500):
-            typ = None
-            desc = None
-            amt = None
-            dat = datetime.datetime(2022,10,30)+datetime.timedelta(days=i)
-            if i % 4 == 0:
-                typ = TransactionType.Debit
-                desc = "test debit {}".format(i)
-                amt = 10.15
-            elif i % 4 == 1:
-                typ = TransactionType.Credit
-                desc = "test credit {}".format(i)
-                amt = 11.15
-            elif i % 4 == 2:
-                typ = TransactionType.Transfer
-                desc = "test xfer {}".format(i)
-                amt = 21.15
-            else:
-                typ = TransactionType.Income
-                desc = "test inc {}".format(i)
-                amt = 31.15
-
-            transaction_db.transactions.add(Transaction(Account.Checking, typ, desc, amt, dat))
-
         print('Saving transaction db with {} entries'.format(len(transaction_db.transactions)))
         transaction_db.Save(db_file_name)
 
