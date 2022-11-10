@@ -47,7 +47,7 @@ class TransactionType(enum.Enum):
     Income = 3
 
 class Transaction:
-    def __init__(self, account, transaction_type, description, amount, datetime, balance_hint=0):
+    def __init__(self, account, transaction_type, description, amount, datetime, balance_hint=0, tags=set()):
         amount_sign = 1
         if amount < 0:
             amount_sign = -1
@@ -58,6 +58,7 @@ class Transaction:
         self.fixed_amount = math.floor(math.abs(amount * 100)) * amount_sign
         self.datetime = datetime
         self.balance_hint = balance_hint
+        self.tags = tags
 
         idbytes = "_".join([
             str(self.account),
@@ -125,6 +126,7 @@ class InteractiveMode(enum.Enum):
     NewDb = 2
     LoadDb = 3
     SaveDb = 4
+    ProcessCsv = 5
 
 
 def present_prompt(prompt, option_dict):
@@ -155,6 +157,65 @@ def load_db_interactive():
     else:
         return None
 
+def csv_processor_chase_bank(csv_rows, account_type):
+    # TODO:
+    raise NotImplementedError
+
+def csv_processor_apple_card(csv_rows, account_type):
+    # TODO:
+    raise NotImplementedError
+
+def process_csv_interactive():
+    class CsvProcessingMode(enum.Enum):
+        OpenCsv = 0
+        SelectAccountType = 1
+        SelectCsvFormat = 2
+        ProcessingCsv = 3
+        Quit = 4
+
+    mode = CsvProcessingMode.OpenCsv
+    csv_rows = None
+    account_type = None
+    csv_processor = None
+
+    while mode != CsvProcessingMode.Quit:
+        match mode:
+            case CsvProcessingMode.OpenCsv:
+                csv_filename = FileDialog.Open()
+                if csv_filename is not None:
+                    with open(csv_filename) as csv_file:
+                        csvDictReader = csv.DictReader(csv_file)
+                        csv_rows = [row for row in csvDictReader]
+                    mode = CsvProcessingMode.SelectAccountType
+                else:
+                    mode = CsvProcessingMode.Quit
+            case CsvProcessingMode.SelectAccountType:
+                account_type = present_prompt("Select an account type:", {
+                    'CHK': ("checking", Account.Checking),
+                    'CC': ("credit card", Account.CreditCard),
+                    'JCHK': ("joint checking", Account.JointChecking),
+                    'B': ("back", None),
+                    })
+                if account_type is not None:
+                    mode = CsvProcessingMode.SelectCsvFormat
+                else:
+                    mode = CsvProcessingMode.Quit
+            case CsvProcessingMode.SelectCsvFormat:
+                csv_processor = present_prompt("Select a CSV format:", {
+                    'CHS': ("chase bank", csv_processor_chase_bank),
+                    'APL': ("apple card", csv_processor_apple_card),
+                    'B': ("back", None),
+                    })
+                if csv_processor is not None:
+                    mode = CsvProcessingMode.ProcessingCsv
+                else:
+                    mode = CsvProcessingMode.SelectAccountType
+                pass
+            case CsvProcessingMode.ProcessingCsv:
+                return csv_processor(csv_rows, account_type)
+            case _:
+                pass
+    return None
 
 def main_interactive():
     mode = InteractiveMode.MainMenu
@@ -168,6 +229,7 @@ def main_interactive():
                     'NDB': ("new db", InteractiveMode.NewDb),
                     'LDB': ("load db", InteractiveMode.LoadDb),
                     'SDB': ("save db", InteractiveMode.SaveDb),
+                    'CSV': ("process csv", InteractiveMode.ProcessCsv),
                     'Q': ("quit", InteractiveMode.Quit),
                     })
 
@@ -216,8 +278,19 @@ def main_interactive():
                     print("ERROR: DB not loaded")
                 mode = InteractiveMode.MainMenu
 
+            case InteractiveMode.ProcessCsv:
+                if state.loaded_db is not None:
+                    transactions = process_csv_interactive()
+                    if transactions is not None:
+                        diff_count = len(transactions - state.loaded_db[1].transactions)
+                        print("Adding %i new transactions" % diff_count)
+                        state.loaded_db[1].transactions.update(transactions)
+                else:
+                    print("ERROR: DB not loaded")
+                mode = InteractiveMode.MainMenu
+
             case _:
-                break
+                pass
 
 def main_cli():
     # verify args
