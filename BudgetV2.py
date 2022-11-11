@@ -85,8 +85,8 @@ class Transaction:
             self.datetime)
 
 class TransactionDb:
-    def __init__(self, transactions=set()):
-        self.transactions = transactions
+    def __init__(self, transactions=dict()):
+        self.__transactions = transactions
 
     def Load(file_name, default_on_missing=False):
         try:
@@ -112,6 +112,20 @@ class TransactionDb:
         except BaseException as e:
             print('Could not save transaction DB to {}! {}'.format(file_name, e))
 
+    def Count(self):
+        return len(self.__transactions)
+
+    def NewEntryCount(self, updates):
+        count = 0
+        for key in updates:
+            if key not in self.__transactions:
+                count += 1
+        return count
+
+    def Update(self, new_entries):
+        self.__transactions.update(new_entries)
+
+
 def PrintUsageError(errorString):
     print('Error: {}'.format(errorString))
     print('Usage: python BudgetV2.py BankStatement.csv TransactionDb.data')
@@ -127,7 +141,6 @@ class InteractiveMode(enum.Enum):
     LoadDb = 3
     SaveDb = 4
     ProcessCsv = 5
-
 
 def present_prompt(prompt, option_dict):
     while True:
@@ -249,7 +262,7 @@ def main_interactive():
                         state.loaded_db = db
                         print("Loaded db. %s (%i entries)" % (
                             state.loaded_db[0],
-                            len(state.loaded_db[1].transactions)
+                            state.loaded_db[1].Count()
                             ))
                 else:
                     # FIXME: support save on re-load
@@ -269,7 +282,7 @@ def main_interactive():
                     if save_file_name is not None:
                         print("Saving db. %s (%i entries)" % (
                             save_file_name,
-                            len(state.loaded_db[1].transactions)
+                            state.loaded_db[1].Count()
                             ))
                         state.loaded_db[1].Save(save_file_name)
                         state.loaded_db = (save_file_name, state.loaded_db[1])
@@ -282,9 +295,8 @@ def main_interactive():
                 if state.loaded_db is not None:
                     transactions = process_csv_interactive()
                     if transactions is not None:
-                        diff_count = len(transactions - state.loaded_db[1].transactions)
-                        print("Adding %i new transactions" % diff_count)
-                        state.loaded_db[1].transactions.update(transactions)
+                        print("Adding %i new transactions" % state.loaded_db[1].NewEntryCount(transactions))
+                        state.loaded_db[1].Update(transactions)
                 else:
                     print("ERROR: DB not loaded")
                 mode = InteractiveMode.MainMenu
@@ -305,7 +317,7 @@ def main_cli():
 
     db_file_name = sys.argv[2]
     transaction_db = TransactionDb.Load(db_file_name, default_on_missing=True)
-    print('Loaded transaction db with {} entries'.format(len(transaction_db.transactions)))
+    print('Loaded transaction db with %u entries' % transaction_db.Count())
 
     with open(bank_statement_file_name) as bank_statement_csv:
         csvDictReader = csv.DictReader(bank_statement_csv)
@@ -314,7 +326,7 @@ def main_cli():
                 pprint.pp(row)
 
     if len(sys.argv) >= 4:
-        print('Saving transaction db with {} entries'.format(len(transaction_db.transactions)))
+        print('Saving transaction db with %u entries' % transaction_db.Count())
         transaction_db.Save(db_file_name)
 
 def main():
