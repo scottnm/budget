@@ -140,12 +140,16 @@ def present_yes_no(prompt):
         })
 
 def present_prompt(prompt, option_dict):
+    max_option_length = max([len(k) for k in option_dict])
+
     while True:
         print()
         if prompt is not None:
             print(prompt)
         for k,v in option_dict.items():
-            print("[%s] - %s" % (k, v[0]))
+            option_text = v[0]
+            whitespace_buffer = " "*(max_option_length - len(k))
+            print("%s[%s] - %s" % (whitespace_buffer, k, option_text))
 
         selection = input()
         if selection in option_dict:
