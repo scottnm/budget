@@ -35,7 +35,7 @@ class FileDialog:
             fname = None
         return fname
 
-class Account(enum.Enum):
+class AccountType(enum.Enum):
     Checking = 0
     CreditCard = 1
     JointChecking = 2
@@ -45,37 +45,26 @@ class TransactionType(enum.Enum):
     Credit = 1
     Transfer = 2
     Income = 3
+    BalancePayment = 4
+
+def stable_str_hash_unsafe(s):
+    return int(hashlib.sha256(s.encode("utf8")).hexdigest(), 16)
 
 class Transaction:
-    def __init__(self, account, transaction_type, description, amount, datetime, balance_hint=0, tags=set()):
+    def __init__(self, account_type, transaction_type, description, amount, datetime, balance_hint=0, tags=set()):
         amount_sign = 1
         if amount < 0:
             amount_sign = -1
 
-        self.account = account
+        self.account_type = account_type
         self.transaction_type = transaction_type
         self.description = description
-        self.fixed_amount = math.floor(math.abs(amount * 100)) * amount_sign
+        self.fixed_amount = math.floor(math.fabs(amount * 100)) * amount_sign
         self.datetime = datetime
         self.balance_hint = balance_hint
         self.tags = tags
 
-        idbytes = "_".join([
-            str(self.account),
-            str(self.transaction_type),
-            self.description,
-            str(self.fixed_amount),
-            str(self.datetime),
-            str(balance_hint)
-            ]).encode("utf8")
-        self.hash = int(hashlib.sha256(idbytes).hexdigest(), 16)
-
-    def __hash__(self):
-        return self.hash
-
-    def __eq__(self, other):
-        return self.hash == other.hash
-
+    """ FIXME: potentially stale
     def __repr__(self):
         return "{}: {} - {}.{} - {}".format(
             self.transaction_type,
@@ -83,6 +72,7 @@ class Transaction:
             math.floor(self.fixed_amount / 100),
             self.fixed_amount % 100,
             self.datetime)
+    """
 
 class TransactionDb:
     def __init__(self, transactions=dict()):
@@ -142,8 +132,16 @@ class InteractiveMode(enum.Enum):
     SaveDb = 4
     ProcessCsv = 5
 
+def present_yes_no(prompt):
+    return present_prompt(prompt, {
+        'Y': ("Yes", True),
+        'N': ("No", False),
+        'B': ("back", None),
+        })
+
 def present_prompt(prompt, option_dict):
     while True:
+        print()
         if prompt is not None:
             print(prompt)
         for k,v in option_dict.items():
@@ -170,18 +168,96 @@ def load_db_interactive():
     else:
         return None
 
-def csv_processor_chase_bank(csv_rows, account_type):
-    # TODO:
-    raise NotImplementedError
+def transaction_key(account_id, transaction_row):
+    row_string = ",".join([str(v) for k,v in transaction_row.items()])
+    key_string = account_id+","+row_string
+    return stable_str_hash_unsafe(key_string)
 
-def csv_processor_apple_card(csv_rows, account_type):
+def date_from_mmddyyyy(date_str):
+    date_parts = date_str.split('/')
+    m,d,y = (int(date_part) for date_part in date_parts)
+    return datetime.datetime(y, m, d)
+
+def csv_processor_chase_bank(csv_rows, account_type, account_id):
+    transactions = dict()
+    index = 0
+    while index < len(csv_rows):
+        row = csv_rows[index]
+        print()
+        pprint.pp(row)
+
+        tkey = transaction_key(account_id, row)
+
+        # We may be editing an old entry. If we are prompt the user for
+        # whether they which (if any) fields they want to edit.
+        transaction_type = None
+        tags = None
+        if tkey in transactions:
+            print("EDIT")
+            old_transaction = transactions[tkey]
+            edit_transaction_type = present_yes_no("Edit transcation type? (was %s)" % old_transaction.transaction_type)
+            if edit_transaction_type is None:
+                if index == 0:
+                    # Backed out of csv input
+                    return None
+                else:
+                    index -= 1
+                    continue
+
+            edit_tags = present_yes_no("Edit tags? (%s)" % (",".join(old_transaction.tags)))
+            if edit_tags is None:
+                if index == 0:
+                    # Backed out of csv input
+                    return None
+                else:
+                    index -= 1
+                    continue
+
+
+            transaction_type = None if edit_transaction_type else old_transaction.transaction_type
+            tags = None if edit_tags else old_transaction.tags
+
+        if transaction_type is None:
+            transaction_type = present_prompt(None, {
+                'D': ("debit", TransactionType.Debit),
+                'C': ("credit", TransactionType.Credit),
+                'T': ("transfer", TransactionType.Transfer),
+                'I': ("income", TransactionType.Income),
+                'P': ("balance payment", TransactionType.BalancePayment),
+                'B': ("back", None),
+                })
+
+            if transaction_type is None:
+                if index == 0:
+                    # Backed out of csv input
+                    return None
+                else:
+                    index -= 1
+                    continue
+
+        if tags is None:
+            tags = set(input("Tags? (comma-separated)").split(","))
+
+        transactions[tkey] = Transaction(
+            account_type,
+            transaction_type=transaction_type,
+            description=row['Description'],
+            amount=float(row['Amount']),
+            datetime=date_from_mmddyyyy(row['Posting Date']),
+            balance_hint=float(row['Balance']),
+            tags=tags)
+        index += 1
+
+    return transactions
+
+def csv_processor_apple_card(csv_rows, account_type, account_id):
     # TODO:
     raise NotImplementedError
 
 def process_csv_interactive():
     class CsvProcessingMode(enum.Enum):
         OpenCsv = 0
-        SelectAccountType = 1
+        SelectAccount = 1
         SelectCsvFormat = 2
         ProcessingCsv = 3
         Quit = 4
@@ -189,6 +265,7 @@ def process_csv_interactive():
     mode = CsvProcessingMode.OpenCsv
     csv_rows = None
     account_type = None
+    account_id = None
     csv_processor = None
 
     while mode != CsvProcessingMode.Quit:
@@ -199,33 +276,24 @@ def process_csv_interactive():
                     with open(csv_filename) as csv_file:
                         csvDictReader = csv.DictReader(csv_file)
                         csv_rows = [row for row in csvDictReader]
-                    mode = CsvProcessingMode.SelectAccountType
+                    mode = CsvProcessingMode.SelectAccount
                 else:
                     mode = CsvProcessingMode.Quit
-            case CsvProcessingMode.SelectAccountType:
-                account_type = present_prompt("Select an account type:", {
-                    'CHK': ("checking", Account.Checking),
-                    'CC': ("credit card", Account.CreditCard),
-                    'JCHK': ("joint checking", Account.JointChecking),
-                    'B': ("back", None),
+            case CsvProcessingMode.SelectAccount:
+                account_selection = present_prompt("Select an account:", {
+                    'JCHK': ("joint checking",    ("jchk", AccountType.JointChecking, csv_processor_chase_bank)),
+                    'PCHK': ("personal checking", ("pchk", AccountType.Checking, csv_processor_chase_bank)),
+                    'AMZ':  ("amazon card",       ("amz",  AccountType.CreditCard, csv_processor_chase_bank)),
+                    'APL':  ("apple card",        ("apl",  AccountType.CreditCard, csv_processor_apple_card)),
+                    'B':    ("back",               None),
                     })
-                if account_type is not None:
-                    mode = CsvProcessingMode.SelectCsvFormat
-                else:
-                    mode = CsvProcessingMode.Quit
-            case CsvProcessingMode.SelectCsvFormat:
-                csv_processor = present_prompt("Select a CSV format:", {
-                    'CHS': ("chase bank", csv_processor_chase_bank),
-                    'APL': ("apple card", csv_processor_apple_card),
-                    'B': ("back", None),
-                    })
-                if csv_processor is not None:
+                if account_selection is not None:
+                    account_id, account_type, csv_processor = account_selection
                     mode = CsvProcessingMode.ProcessingCsv
                 else:
-                    mode = CsvProcessingMode.SelectAccountType
-                pass
+                    mode = CsvProcessingMode.Quit
             case CsvProcessingMode.ProcessingCsv:
-                return csv_processor(csv_rows, account_type)
+                return csv_processor(csv_rows, account_type, account_id)
             case _:
                 pass
     return None
@@ -237,7 +305,6 @@ def main_interactive():
     while mode != InteractiveMode.Quit:
         match mode:
             case InteractiveMode.MainMenu:
-                print()
                 mode = present_prompt(None, {
                     'NDB': ("new db", InteractiveMode.NewDb),
                     'LDB': ("load db", InteractiveMode.LoadDb),
