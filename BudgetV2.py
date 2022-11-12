@@ -182,7 +182,55 @@ def date_from_mmddyyyy(date_str):
     m,d,y = (int(date_part) for date_part in date_parts)
     return datetime.datetime(y, m, d)
 
-def csv_processor_chase_bank(csv_rows, account_type, account_id):
+def csv_processor_chase_bank(row, old_transaction, account_type, account_id):
+    transaction_type = None
+    tags = None
+
+    # We may be editing an old entry. If we are prompt the user for
+    # whether they which (if any) fields they want to edit.
+    if old_transaction is not None:
+        print("EDIT")
+        edit_transaction_type = present_yes_no("Edit transcation type? (was %s)" % old_transaction.transaction_type)
+        if edit_transaction_type is None:
+            return None
+
+        edit_tags = present_yes_no("Edit tags? (%s)" % (",".join(old_transaction.tags)))
+        if edit_tags is None:
+            return None
+
+        transaction_type = None if edit_transaction_type else old_transaction.transaction_type
+        tags = None if edit_tags else old_transaction.tags
+
+    if transaction_type is None:
+        transaction_type = present_prompt(None, {
+            'D': ("debit", TransactionType.Debit),
+            'C': ("credit", TransactionType.Credit),
+            'T': ("transfer", TransactionType.Transfer),
+            'I': ("income", TransactionType.Income),
+            'P': ("balance payment", TransactionType.BalancePayment),
+            'B': ("back", None),
+            })
+
+        if transaction_type is None:
+            return None
+
+    if tags is None:
+        tags = set(input("Tags? (comma-separated)").split(","))
+
+    return Transaction(
+        account_type,
+        transaction_type=transaction_type,
+        description=row['Description'],
+        amount=float(row['Amount']),
+        datetime=date_from_mmddyyyy(row['Posting Date']),
+        balance_hint=float(row['Balance']),
+        tags=tags)
+
+def csv_processor_apple_card(row, old_transaction, account_type, account_id):
+    # TODO:
+    raise NotImplementedError
+
+def process_csv_rows(csv_rows, csv_row_processor, account_type, account_id):
     transactions = dict()
     index = 0
     while index < len(csv_rows):
@@ -191,72 +239,18 @@ def csv_processor_chase_bank(csv_rows, account_type, account_id):
         pprint.pp(row)
 
         tkey = transaction_key(account_id, row)
-
-        # We may be editing an old entry. If we are prompt the user for
-        # whether they which (if any) fields they want to edit.
-        transaction_type = None
-        tags = None
-        if tkey in transactions:
-            print("EDIT")
-            old_transaction = transactions[tkey]
-            edit_transaction_type = present_yes_no("Edit transcation type? (was %s)" % old_transaction.transaction_type)
-            if edit_transaction_type is None:
-                if index == 0:
-                    # Backed out of csv input
-                    return None
-                else:
-                    index -= 1
-                    continue
-
-            edit_tags = present_yes_no("Edit tags? (%s)" % (",".join(old_transaction.tags)))
-            if edit_tags is None:
-                if index == 0:
-                    # Backed out of csv input
-                    return None
-                else:
-                    index -= 1
-                    continue
-
-
-            transaction_type = None if edit_transaction_type else old_transaction.transaction_type
-            tags = None if edit_tags else old_transaction.tags
-
-        if transaction_type is None:
-            transaction_type = present_prompt(None, {
-                'D': ("debit", TransactionType.Debit),
-                'C': ("credit", TransactionType.Credit),
-                'T': ("transfer", TransactionType.Transfer),
-                'I': ("income", TransactionType.Income),
-                'P': ("balance payment", TransactionType.BalancePayment),
-                'B': ("back", None),
-                })
-
-            if transaction_type is None:
-                if index == 0:
-                    # Backed out of csv input
-                    return None
-                else:
-                    index -= 1
-                    continue
-
-        if tags is None:
-            tags = set(input("Tags? (comma-separated)").split(","))
-
-        transactions[tkey] = Transaction(
-            account_type,
-            transaction_type=transaction_type,
-            description=row['Description'],
-            amount=float(row['Amount']),
-            datetime=date_from_mmddyyyy(row['Posting Date']),
-            balance_hint=float(row['Balance']),
-            tags=tags)
-        index += 1
+        old_transaction = transactions.get(tkey) # use `get` so that if not present None is returned rather than exception
+        transaction = csv_row_processor(row, old_transaction, account_type, account_id)
+        if transaction is not None:
+            transactions[tkey] = transaction
+            index += 1
+        else:
+            # Backed out of the registering the current transaction. Either go back or quit.
+            if index == 0:
+                return None
+            index -= 1
 
     return transactions
-
-def csv_processor_apple_card(csv_rows, account_type, account_id):
-    # TODO:
-    raise NotImplementedError
 
 def process_csv_interactive():
     class CsvProcessingMode(enum.Enum):
@@ -297,7 +291,7 @@ def process_csv_interactive():
                 else:
                     mode = CsvProcessingMode.Quit
             case CsvProcessingMode.ProcessingCsv:
-                return csv_processor(csv_rows, account_type, account_id)
+                return process_csv_rows(csv_rows, csv_processor, account_type, account_id)
             case _:
                 pass
     return None
